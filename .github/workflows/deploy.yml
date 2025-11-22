@@ -33,7 +33,7 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
-      - name: Check out code
+      - name: Check out codes
         uses: actions/checkout@v2
 
       - name: Log in to Azure
