@@ -2,7 +2,7 @@ terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "~>4.3.0" # Update to the latest version
+      version = "~>4.3.0"
     }
   }
   backend "azurerm" {
@@ -41,7 +41,7 @@ resource "azurerm_kubernetes_cluster" "aks" {
 }
 
 resource "azurerm_container_registry" "acr" {
-  name                = "kingacr" # Replace with your preferred ACR name
+  name                = "kingacr" 
   resource_group_name = azurerm_resource_group.KingRG.name
   location            = azurerm_resource_group.KingRG.location
   sku                 = "Basic"
