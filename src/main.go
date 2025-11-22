@@ -69,7 +69,7 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
         </head>
         <body>
             <header>
-                <h1>DevOps Portfolio</h1>
+                <h1>My DevOps Portfolio</h1>
             </header>
             <div class="container">
                 <nav>
