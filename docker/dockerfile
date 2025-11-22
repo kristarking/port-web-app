@@ -4,7 +4,7 @@ WORKDIR /app
 COPY ../src/ .
 RUN go mod init app && go build -o main .
 
-# Distroless Stage
+# Distroless build Stage
 FROM gcr.io/distroless/base-debian10
 COPY --from=builder /app/main /main
 CMD ["/main"]
