@@ -1,308 +1,375 @@
-# Go App — AKS Deployment (Distroless · Multi-Stage · Terraform · TLS Ingress)
+# DevOps Portfolio - Azure Kubernetes Deployment
 
-[![build-badge](https://img.shields.io/badge/build-passing-brightgreen)](#) ![go-version](https://img.shields.io/badge/go-1.22-blue) ![license](https://img.shields.io/badge/license-MIT-lightgrey)
-
-> Minimal Go web app built with a multi-stage, distroless Docker image, provisioned to **Azure Kubernetes Service (AKS)** via **Terraform**, deployed with **1 replica**, and exposed via a TLS-enabled Ingress.
+A complete DevOps project demonstrating Infrastructure as Code, containerization, and automated deployment to Azure Kubernetes Service.
 
 ---
 
-## Table of contents
+## Table of Contents
 
-- [Project overview](#project-overview)  
-- [Features](#features)  
-- [Prerequisites](#prerequisites)  
-- [Repository layout](#repository-layout)  
-- [Multi-stage Dockerfile (distroless)](#multi-stage-dockerfile-distroless)  
-- [Terraform (provision AKS)](#terraform-provision-aks)  
-- [Kubernetes manifests (Deployment, Service, Ingress + TLS)](#kubernetes-manifests-deployment-service-ingress--tls)  
-- [Quickstart](#quickstart)  
-- [Local development & testing](#local-development--testing)  
-- [Troubleshooting & tips](#troubleshooting--tips)  
-- [License & author](#license--author)
-
----
-
-## Project overview
-
-This repository demonstrates:
-
-- Compiling a Go binary in a build stage and packaging only the binary into a **distroless** runtime image (tiny surface/size).  
-- Infrastructure-as-code using **Terraform** to create an AKS cluster and necessary Azure resources.  
-- Kubernetes manifests for a Deployment (1 replica), Service, and TLS-enabled Ingress to terminate HTTPS.  
-- A small, production-minded layout suitable for CI/CD pipelines.
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Prerequisites](#prerequisites)
+- [Project Structure](#project-structure)
+- [Setup Instructions](#setup-instructions)
+- [Deployment](#deployment)
+- [Accessing the Application](#accessing-the-application)
+- [Known Issues & Fixes](#known-issues--fixes)
+- [Cleanup](#cleanup)
+- [Technologies Used](#technologies-used)
 
 ---
 
-## Features
+## Overview
 
-- ✅ Go application (compiled with `CGO_ENABLED=0`)  
-- ✅ Multi-stage Docker build (build → distroless runtime)  
-- ✅ Minimal final image size and attack surface  
-- ✅ AKS deployment with Terraform provisioning  
-- ✅ TLS termination at Ingress (Kubernetes Secret or cert-manager)  
-- ✅ 1 replica by default (easy to scale)
+This project deploys a Go-based portfolio web application to Azure Kubernetes Service (AKS) using:
+- **Terraform** for infrastructure provisioning
+- **Docker** for containerization with distroless images
+- **GitHub Actions** for CI/CD automation
+- **Azure Container Registry** for image storage
+- **Kubernetes** for orchestration (3 replicas with LoadBalancer)
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    GitHub Actions                        │
+│  (Build Docker Image → Push to ACR → Deploy to AKS)    │
+└──────────────────┬──────────────────────────────────────┘
+                   │
+                   ▼
+         ┌─────────────────────┐
+         │  Azure Container    │
+         │    Registry (ACR)   │
+         │   kingacr.azurecr.io│
+         └──────────┬──────────┘
+                    │
+                    ▼
+         ┌─────────────────────┐
+         │   Azure Kubernetes  │
+         │   Service (AKS)     │
+         │  - 3 Replicas       │
+         │  - LoadBalancer     │
+         └─────────────────────┘
+```
 
 ---
 
 ## Prerequisites
 
-- Go (for local dev): `>=1.18` (example uses 1.22)  
-- Docker / Buildx  
-- Azure CLI + logged in (`az login`)  
-- Terraform `>=1.3`  
-- `kubectl` configured for target AKS cluster  
-- (Optional) `helm` if using cert-manager for TLS
+Before you begin, ensure you have:
+
+- [ ] Azure subscription (with contributor access)
+- [ ] Azure CLI installed and logged in
+- [ ] Terraform v4.3.0+ installed
+- [ ] Docker installed
+- [ ] kubectl installed
+- [ ] Git installed
+- [ ] GitHub account
 
 ---
 
-## Repository layout
+## Project Structure
 
 ```
-.
-├── app/
-│   └── main.go                # simple Go HTTP server
-├── Dockerfile                 # multi-stage + distroless
-├── kubernetes/
-│   ├── deployment.yaml
-│   ├── service.yaml
-│   ├── ingress.yaml
-│   └── tls-secret.yaml        # optional example if you provide certs manually
-└── terraform/
-    ├── main.tf
-    ├── variables.tf
-    └── outputs.tf
+devops-portfolio/
+│
+├── .github/
+│   └── workflows/
+│       └── ci-cd-pipeline.yml     # GitHub Actions CI/CD workflow
+│
+├── docker/
+│   └── dockerfile                 # Multi-stage Docker build
+│
+├── k8s/
+│   ├── deployment.yml             # Kubernetes deployment (3 replicas)
+│   └── service.yml                # LoadBalancer service
+│
+├── src/
+│   └── main.go                    # Go web application
+│
+├── terraform/
+│   ├── main.tf                    # Infrastructure definitions
+│   ├── variables.tf               # Terraform variables
+│   └── .gitignore                 # Terraform ignore rules
+│
+└── README.md                      # This file
 ```
 
 ---
 
-## Multi-stage Dockerfile (distroless)
+## Setup Instructions
 
+### Step 1: Clone Repository
+
+```bash
+git clone https://github.com/yourusername/devops-portfolio.git
+cd devops-portfolio
+```
+
+### Step 2: Set Up Azure Backend for Terraform
+
+Create storage account for Terraform state:
+
+```bash
+# Create resource group
+az group create --name KingRG --location "South Africa North"
+
+# Create storage account
+az storage account create \
+  --name kingst \
+  --resource-group KingRG \
+  --location "South Africa North" \
+  --sku Standard_LRS
+
+# Create container
+az storage container create \
+  --name tfstate \
+  --account-name kingst
+```
+
+### Step 3: Configure GitHub Secrets
+
+Create Azure service principal:
+
+```bash
+az ad sp create-for-rbac \
+  --name "github-actions-sp" \
+  --role contributor \
+  --scopes /subscriptions/70faaaeb-e126-4ca7-95be-9e614709f37b \
+  --sdk-auth
+```
+
+Add the JSON output as `AZURE_CREDENTIALS` in GitHub repository secrets:
+1. Go to repository **Settings** → **Secrets and variables** → **Actions**
+2. Click **New repository secret**
+3. Name: `AZURE_CREDENTIALS`
+4. Value: Paste the JSON output
+
+### Step 4: Provision Infrastructure
+
+```bash
+cd terraform
+
+# Initialize Terraform
+terraform init
+
+# Review the plan
+terraform plan
+
+# Apply the configuration
+terraform apply -auto-approve
+```
+
+This creates:
+- Resource Group: `KingRG` in South Africa North
+- AKS Cluster: `DevOpsCluster` (2 x Standard_DS2_v2 nodes)
+- Container Registry: `kingacr`
+
+### Step 5: Attach ACR to AKS
+
+**IMPORTANT**: Your AKS cluster needs permission to pull images from ACR:
+
+```bash
+# Get ACR ID
+ACR_ID=$(az acr show --name kingacr --resource-group KingRG --query id --output tsv)
+
+# Attach ACR to AKS
+az aks update \
+  --name DevOpsCluster \
+  --resource-group KingRG \
+  --attach-acr $ACR_ID
+```
+
+---
+
+## Deployment
+
+### Manual Deployment (Optional)
+
+If you want to deploy manually before setting up CI/CD:
+
+```bash
+# Build and push Docker image
+az acr login --name kingacr
+docker build -t kingacr.azurecr.io/devops-portfolio:latest -f docker/dockerfile .
+docker push kingacr.azurecr.io/devops-portfolio:latest
+
+# Configure kubectl
+az aks get-credentials --resource-group KingRG --name DevOpsCluster --admin
+
+# Deploy to Kubernetes
+kubectl apply -f k8s/deployment.yml
+kubectl apply -f k8s/service.yml
+```
+
+### Automated Deployment (CI/CD)
+
+Push code to `main` branch to trigger GitHub Actions:
+
+```bash
+git add .
+git commit -m "Deploy to AKS"
+git push origin main
+```
+
+The pipeline will automatically:
+1. ✅ Check out code
+2. ✅ Authenticate with Azure
+3. ✅ Build Docker image
+4. ✅ Push to Azure Container Registry
+5. ✅ Deploy to AKS cluster
+
+---
+
+## Accessing the Application
+
+### Get LoadBalancer External IP
+
+```bash
+kubectl get service app-service
+
+# Wait for EXTERNAL-IP (may take 2-3 minutes)
+kubectl get service app-service --watch
+```
+
+### Access the Application
+
+Open browser and navigate to:
+```
+http://<EXTERNAL-IP>
+```
+
+### Application Routes
+
+- `/` - Home page
+- `/projects` - Projects showcase
+- `/contact` - Contact information
+
+---
+
+## Known Issues & Fixes
+
+### Issue 1: Dockerfile COPY Path
+
+**Current issue in `docker/dockerfile`:**
 ```dockerfile
-# -------------------------
-# Build stage
-# -------------------------
-FROM golang:1.22 AS builder
-WORKDIR /src
-COPY go.mod go.sum ./
-RUN go mod download
+COPY ../src/ .  # This may fail depending on build context
+```
 
-COPY . .
-# produce a static binary for linux
- RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /app/server ./app
+**Fix:** Update to:
+```dockerfile
+COPY src/ .
+```
 
-# -------------------------
-# Runtime stage - distroless
-# -------------------------
-FROM gcr.io/distroless/static-debian12
-COPY --from=builder /app/server /server
-EXPOSE 8080
-ENTRYPOINT ["/server"]
+Or build from root with proper context:
+```bash
+docker build -t kingacr.azurecr.io/devops-portfolio:latest -f docker/dockerfile .
+```
+
+### Issue 2: ACR Authentication
+
+If pods fail to pull images with `ImagePullBackOff` error:
+
+```bash
+# Check pod status
+kubectl get pods
+kubectl describe pod <pod-name>
+
+# Fix by attaching ACR to AKS
+az aks update --name DevOpsCluster --resource-group KingRG --attach-acr kingacr
+```
+
+### Issue 3: Terraform Resource Group Conflict
+
+The `main.tf` both creates and references `KingRG`. Ensure the resource group is created FIRST by Terraform, or if it exists, import it:
+
+```bash
+terraform import azurerm_resource_group.KingRG /subscriptions/70faaaeb-e126-4ca7-95be-9e614709f37b/resourceGroups/KingRG
 ```
 
 ---
 
-## Terraform — provision AKS (example)
+## Monitoring & Debugging
 
-**`terraform/main.tf`**
+### Check Deployment Status
 
-```hcl
-provider "azurerm" {
-  features = {}
-}
+```bash
+# View all resources
+kubectl get all
 
-resource "azurerm_resource_group" "rg" {
-  name     = var.rg_name
-  location = var.location
-}
+# Check pod logs
+kubectl logs -l app=devops-portfolio
 
-resource "azurerm_kubernetes_cluster" "aks" {
-  name                = var.aks_name
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
-  dns_prefix          = var.dns_prefix
-  default_node_pool {
-    name       = "agentpool"
-    node_count = var.node_count
-    vm_size    = var.node_vm_size
-  }
-  identity {
-    type = "SystemAssigned"
-  }
-}
+# Describe deployment
+kubectl describe deployment app-deployment
 
-output "kube_config" {
-  value     = azurerm_kubernetes_cluster.aks.kube_config_raw
-  sensitive = true
-}
+# Check service
+kubectl describe service app-service
 ```
 
-Deploy:
+### Scale Deployment
+
+```bash
+# Scale to 5 replicas
+kubectl scale deployment app-deployment --replicas=5
+
+# Verify
+kubectl get pods
+```
+
+---
+
+## Cleanup
+
+### Delete Kubernetes Resources
+
+```bash
+kubectl delete -f k8s/deployment.yml
+kubectl delete -f k8s/service.yml
+```
+
+### Destroy Infrastructure
 
 ```bash
 cd terraform
-terraform init
-terraform apply
+terraform destroy -auto-approve
 ```
+
+### Delete GitHub Actions Artifacts (Optional)
+
+Go to repository **Actions** tab and manually delete old workflow runs.
 
 ---
 
-## Kubernetes manifests
+## Technologies Used
 
-### `kubernetes/deployment.yaml`
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: go-app
-  labels:
-    app: go-app
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: go-app
-  template:
-    metadata:
-      labels:
-        app: go-app
-    spec:
-      containers:
-        - name: go-app
-          image: <registry>/go-app:latest
-          ports:
-            - containerPort: 8080
-```
-
-### `kubernetes/service.yaml`
-
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: go-app-svc
-spec:
-  selector:
-    app: go-app
-  ports:
-    - protocol: TCP
-      port: 80
-      targetPort: 8080
-  type: ClusterIP
-```
-
-### `kubernetes/ingress.yaml`
-
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: go-app-ingress
-  annotations:
-    kubernetes.io/ingress.class: "nginx"
-spec:
-  tls:
-    - hosts:
-        - example.yourdomain.com
-      secretName: go-app-tls
-  rules:
-    - host: example.yourdomain.com
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: go-app-svc
-                port:
-                  number: 80
-```
-
-### TLS secret (optional)
-
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: go-app-tls
-type: kubernetes.io/tls
-data:
-  tls.crt: <base64 cert>
-  tls.key: <base64 key>
-```
+| Technology | Version | Purpose |
+|------------|---------|---------|
+| Go | 1.18 | Application backend |
+| Docker | Latest | Containerization |
+| Kubernetes | Latest | Orchestration |
+| Terraform | ~4.3.0 | Infrastructure as Code |
+| Azure AKS | Latest | Managed Kubernetes |
+| Azure ACR | Basic SKU | Container registry |
+| GitHub Actions | Latest | CI/CD automation |
+| Distroless | Debian 10 | Minimal container image |
 
 ---
 
-## Quickstart
+## Contributing
 
-### 1️⃣ Provision AKS via Terraform
-
-```bash
-cd terraform
-terraform init
-terraform apply
-```
-
-### 2️⃣ Build and push the image
-
-```bash
-docker build -t <registry>/go-app:latest .
-docker push <registry>/go-app:latest
-```
-
-### 3️⃣ Deploy to AKS
-
-```bash
-kubectl apply -f kubernetes/
-```
-
-### 4️⃣ Confirm deployment
-
-```bash
-kubectl get deployments,svc,ingress
-```
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/improvement`)
+3. Commit changes (`git commit -am 'Add new feature'`)
+4. Push to branch (`git push origin feature/improvement`)
+5. Open a Pull Request
 
 ---
+## Contact
 
-## Local development & testing
+- **Email**: ojedayochristopher@gmail.com
+- **LinkedIn**: https://linkedin.com/in/christopherojedayo
 
-Run locally:
-
-```bash
-cd app
-go run main.go
-```
-
-Run tests:
-
-```bash
-go test ./...
-```
-
-Test container locally:
-
-```bash
-docker build -t go-app:local .
-docker run --rm -p 8080:8080 go-app:local
-```
-
----
-
-## Troubleshooting & tips
-
-- If TLS isn’t working, ensure your domain matches the cert and secret.
-- Make sure the Ingress controller is running.
-- Use `kubectl describe ingress` for debugging.
-- For production, prefer `cert-manager` + Let’s Encrypt.
-
----
-
-## License & author
-
-MIT License.
-
-**Author:** Chris O
-
-Pull requests are welcome!
-
-
+**⭐ Star this repository if you found it helpful!**
